@@ -1,57 +1,59 @@
-use std::sync::Mutex;
-use async_trait::async_trait;
+use std::{collections::HashMap, sync::Arc};
 
-#[async_trait]
-pub trait PortManager: Sync {
-    fn allocate_port(&self) -> Result<u16, ()>;
-    fn free_port(&self, port: u16);
+use fast_async_mutex::mutex::Mutex;
+
+use crate::tunnel::Tunnel;
+
+pub struct PortManager {
+	pub tunnels: HashMap<String, Arc<Mutex<Tunnel>>>,
+    pub used_ports: Vec<bool>, 
+	pub port_range_start: i32,
+	pub port_range_size: i32,
 }
 
-pub struct PortManagerImpl {
-    pub allocated_ports: Mutex<Vec<bool>>,
-    pub port_range_start: u16,
+pub fn create_port_manager(port_range_start: i32, port_range_size: i32) -> PortManager {
+	PortManager {
+		tunnels: HashMap::new(),
+        used_ports: vec![false; port_range_size as usize],
+		port_range_start,
+		port_range_size,
+	}
 }
 
-pub fn create_port_manager(port_range_start: u16, port_range_size: u16) -> PortManagerImpl {
-    PortManagerImpl {
-        allocated_ports: Mutex::new(vec![false; port_range_size as usize]),
-        port_range_start,
+impl PortManager {
+
+    pub fn get_tunnel(&self, id: &String) -> Option<&Arc<Mutex<Tunnel>>> {
+        self.tunnels.get(id)
+    } 
+
+	pub fn allocate_port(&self) -> Result<i32, ()> {
+
+		for port in 0..self.port_range_size {
+            let b = self.used_ports[port as usize];
+            if !b {
+				return Ok(self.port_range_start + port);
+			}
+		}
+
+		// All ports are in use
+		Err(())
+	}
+
+    pub fn add_tunnel(&mut self, id: String, tunnel: Arc<Mutex<Tunnel>>) {
+        self.tunnels.insert(id, tunnel);
     }
-}
 
-
-#[async_trait]
-impl PortManager for PortManagerImpl {
-
-    fn allocate_port(&self) -> Result<u16, ()> {
-        let mut ports = self.allocated_ports.lock().unwrap();
-        let start = self.port_range_start;
-
-        for i in 0..ports.len() {
-            if !ports[i] {
-                ports[i] = true;
-                return Ok(start.saturating_add(i as u16));
-            }
-        }
-
-        // All ports are in use
-        Err(())
-    }
-
-    fn free_port(&self, port: u16) {
-        if port < self.port_range_start {
-            return;
-        }
-        let index = port - self.port_range_start;
-        let mut ports = self.allocated_ports.lock().unwrap();
-
-        if index as usize >= ports.len() {
-            return;
-        }
-        if ports[index as usize] {
-            ports[index as usize] = false;
+    pub async fn remove_tunnel(&mut self, tunnel_id: String) -> bool {
+        let removed = self.tunnels.remove(&tunnel_id);
+        match removed {
+            Some(t) => {
+                let tunnel = t.lock().await;
+                self.used_ports[(tunnel.public_port - self.port_range_start) as usize] = false;
+                println!("Marked port {} as free.", tunnel.public_port);
+                true
+            },
+            None => false
         }
     }
+
 }
-
-
