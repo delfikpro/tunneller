@@ -1,0 +1,24 @@
+name: Rust
+
+on:
+  push:
+    branches: [ stable ]
+  pull_request:
+    branches: [ stable ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --verbose --release
+    - uses: actions/upload-artifact@v2
+      with:
+        name: tunneller-binary
+        path: release/bungee
