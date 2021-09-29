@@ -182,8 +182,8 @@ async fn main() -> std::io::Result<()> {
 	)));
 	HttpServer::new(move || {
 		App::new()
-		.data(port_manager_arc.clone())
-		.data(rt_arc.clone())
+		.app_data(port_manager_arc.clone())
+		.app_data(rt_arc.clone())
 		.wrap(Logger::new("%a %t %r %s %b"))
 		.service(index)
 	})
