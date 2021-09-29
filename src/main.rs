@@ -103,7 +103,7 @@ async fn index(
 	request: HttpRequest,
 	info: web::Query<tunnel::TunnellerRequest>,
 	port_manager_mutex: web::Data<Mutex<PortManager>>,
-    tokio_runtime: web::Data<Runtime>,
+    // tokio_runtime: web::Data<Runtime>,
 ) -> Result<HttpResponse> {
     println!("Hello world");
 	let mut port_manager = port_manager_mutex.lock().await;
@@ -139,7 +139,7 @@ async fn index(
             let arc = Arc::new(tunnel_mutex);
             let arc_2 = arc.clone();
 			println!("Creating tunnel thread...");
-			tokio_runtime.spawn(async move {
+			tokio::runtime::Runtime::new().unwrap().spawn(async move {
 				println!("Creating tunnel...");
                 create_tunnel(arc_2)
             });
@@ -184,7 +184,7 @@ async fn main() -> std::io::Result<()> {
 	)));
 	HttpServer::new(move || {
 		App::new()
-		// .app_data(port_manager_arc.clone())
+		.app_data(port_manager_arc.clone())
 		// .app_data(rt_arc.clone())
 		.wrap(Logger::new("%a %t %r %s %b"))
 		.service(index)
