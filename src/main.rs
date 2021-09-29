@@ -138,7 +138,9 @@ async fn index(
 
             let arc = Arc::new(tunnel_mutex);
             let arc_2 = arc.clone();
+			println!("Creating tunnel thread...");
 			tokio_runtime.spawn(async move {
+				println!("Creating tunnel...");
                 create_tunnel(arc_2)
             });
             port_manager.add_tunnel(info.id.to_string(), arc);
