@@ -107,9 +107,10 @@ async fn index(
 ) -> Result<HttpResponse> {
     println!("Hello world");
 	let mut port_manager = port_manager_mutex.lock().await;
-
+	println!("a");
 	match &port_manager.get_tunnel(&info.id) {
 		Some(tunnel) => {
+			println!("b");
             let t = tunnel.lock().await;
             Ok(HttpResponse::Ok().json(TunnellerResponse {
                 tunnel_id: t.id.to_owned(),
@@ -118,6 +119,7 @@ async fn index(
             }))
         },
 		None => {
+			println!("c");
 			let public_port = match port_manager.allocate_port() {
 				Ok(port) => port,
 				Err(_) => {
