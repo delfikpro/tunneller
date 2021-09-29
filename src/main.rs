@@ -176,24 +176,16 @@ async fn main() -> std::io::Result<()> {
 		port_range_start + port_range_size - 1
 	);
 
-	let port_manager_arc = web::Data::new(create_port_manager(
+	let port_manager_arc = web::Data::new(Mutex::new(create_port_manager(
 		port_range_start,
 		port_range_size,
-	));
+	)));
 	HttpServer::new(move || {
 		App::new()
+		.data(port_manager_arc.clone())
+		.data(rt_arc.clone())
 		.wrap(Logger::new("%a %t %r %s %b"))
-		.wrap_fn(|req,srv| {
-			println!("Request: {}", req.path());
-			srv.call(req).map(|res|{
-				let resp = res.unwrap();
-				println!("Response: {}", resp.status());
-				Ok(resp)
-			})
-		})
-        .data(port_manager_arc.clone())
-        .data(rt_arc.clone())
-			.service(index)
+		.service(index)
 	})
 	.disable_signals()
 	.bind(format!("0.0.0.0:{}", bind_port))?
