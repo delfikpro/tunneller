@@ -5,10 +5,12 @@ mod protocol;
 mod tunnel;
 
 use actix_web::*;
+use actix_web::dev::Service;
 use ext::*;
 extern crate lazy_static;
 
 use fast_async_mutex::mutex::Mutex;
+use futures::FutureExt;
 use protocol::handshake::Handshake;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -174,6 +176,14 @@ async fn main() -> std::io::Result<()> {
 	));
 	HttpServer::new(move || {
 		App::new()
+		.wrap_fn(|req,srv| {
+			println!("Request: {}", req.path());
+			srv.call(req).map(|res|{
+				let resp = res.unwrap();
+				println!("Response: {}", resp.status());
+				Ok(resp)
+			})
+		})
         .data(port_manager_arc.clone())
         .data(rt_arc.clone())
 			.service(index)
