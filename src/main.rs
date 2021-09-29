@@ -79,6 +79,8 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn s
 		address = format!("0.0.0.0:{}", tunnel.public_port);
 	}
 
+	println!("Bindning tunnel listener to {}", address);
+
 	let listener = TcpListener::bind(&address).await?;
 	println!("Bound tunnel listener to {}", address);
 
@@ -105,12 +107,9 @@ async fn index(
 	port_manager_mutex: web::Data<Mutex<PortManager>>,
     // tokio_runtime: web::Data<Runtime>,
 ) -> Result<HttpResponse> {
-    println!("Hello world");
 	let mut port_manager = port_manager_mutex.lock().await;
-	println!("a");
 	match &port_manager.get_tunnel(&info.id) {
 		Some(tunnel) => {
-			println!("b");
             let t = tunnel.lock().await;
             Ok(HttpResponse::Ok().json(TunnellerResponse {
                 tunnel_id: t.id.to_owned(),
@@ -119,7 +118,7 @@ async fn index(
             }))
         },
 		None => {
-			println!("c");
+			println!("Allocating port...");
 			let public_port = match port_manager.allocate_port() {
 				Ok(port) => port,
 				Err(_) => {
@@ -127,6 +126,7 @@ async fn index(
 					return Ok(HttpResponse::ServiceUnavailable().finish());
 				}
 			};
+			println!("Allocated port {}", public_port);
 
 			let tunnel = Tunnel {
 				id: info.id.to_string(),
