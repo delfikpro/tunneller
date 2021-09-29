@@ -6,11 +6,13 @@ mod tunnel;
 
 use actix_web::*;
 use actix_web::dev::Service;
+use actix_web::middleware::Logger;
 use ext::*;
 extern crate lazy_static;
 
 use fast_async_mutex::mutex::Mutex;
 use futures::FutureExt;
+use log::logger;
 use protocol::handshake::Handshake;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -164,6 +166,10 @@ async fn main() -> std::io::Result<()> {
 	let port_range_size = 100;
 	let bind_port: i32 = 34064;
 
+	std::env::set_var("RUST_LOG", "info");
+	std::env::set_var("RUST_BACKTRACE", "1");
+	env_logger::init();
+
 	println!(
 		"Using ports {}-{} for tunnels",
 		port_range_start,
@@ -176,6 +182,7 @@ async fn main() -> std::io::Result<()> {
 	));
 	HttpServer::new(move || {
 		App::new()
+		.wrap(Logger::new("%a %t %r %s %b"))
 		.wrap_fn(|req,srv| {
 			println!("Request: {}", req.path());
 			srv.call(req).map(|res|{

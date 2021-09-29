@@ -19,6 +19,7 @@ derive-packetdata = {path = "./derive-packetdata"}
 futures = "0.3.15"
 log = "0.4.14"
 fast-async-mutex = "0.6.7"
+env_logger="0.8"
 
 impl-trait-for-tuples = "0.2.1"
 thiserror = "1.0.25"
