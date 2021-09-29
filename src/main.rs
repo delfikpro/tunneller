@@ -143,7 +143,7 @@ async fn index(
 			println!("Creating tunnel thread...");
 			tokio::runtime::Runtime::new().unwrap().spawn(async move {
 				println!("Creating tunnel...");
-                create_tunnel(arc_2)
+                create_tunnel(arc_2).await.unwrap_err();
             });
             port_manager.add_tunnel(info.id.to_string(), arc);
 
