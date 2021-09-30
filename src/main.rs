@@ -80,11 +80,11 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn s
 	}
 
 	println!("Bindning tunnel listener to {}", address);
-
 	let listener = TcpListener::bind(&address).await?;
 	println!("Bound tunnel listener to {}", address);
 
 	loop {
+		println!("Awaiting connection...");
 		let (stream, _) = listener.accept().await?;
 		println!("Got connection: {:?}", stream);
 
