@@ -104,10 +104,11 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn s
 async fn index(
 	request: HttpRequest,
 	info: web::Query<tunnel::TunnellerRequest>,
-	port_manager_mutex: web::Data<Mutex<PortManager>>,
+	data: web::Data<(Mutex<PortManager>, Runtime)>,
     // tokio_runtime: web::Data<Runtime>,
 ) -> Result<HttpResponse> {
-	let mut port_manager = port_manager_mutex.lock().await;
+	let runtime = &data.1;
+	let mut port_manager = data.0.lock().await;
 	match &port_manager.get_tunnel(&info.id) {
 		Some(tunnel) => {
             let t = tunnel.lock().await;
@@ -141,7 +142,7 @@ async fn index(
             let arc = Arc::new(tunnel_mutex);
             let arc_2 = arc.clone();
 			println!("Creating tunnel thread...");
-			tokio::runtime::Runtime::new().unwrap().spawn(async move {
+			runtime.spawn(async move {
 				println!("Creating tunnel...");
                 panic!("Connection closed {}", create_tunnel(arc_2).await.unwrap_err());
             });
@@ -164,8 +165,6 @@ async fn index(
 async fn main() -> std::io::Result<()> {
 	let rt = tokio::runtime::Runtime::new().unwrap();
 
-    let rt_arc = web::Data::new(rt);
-
 	let port_range_start = 34100;
 	let port_range_size = 100;
 	let bind_port: i32 = 34064;
@@ -180,10 +179,10 @@ async fn main() -> std::io::Result<()> {
 		port_range_start + port_range_size - 1
 	);
 
-	let port_manager_arc = web::Data::new(Mutex::new(create_port_manager(
+	let port_manager_arc = web::Data::new((Mutex::new(create_port_manager(
 		port_range_start,
 		port_range_size,
-	)));
+	)), rt));
 	HttpServer::new(move || {
 		App::new()
 		.app_data(port_manager_arc.clone())
