@@ -42,6 +42,7 @@ async fn handle_stream(
 
 	json.as_array_mut().unwrap().append(&mut vec![json!({
 		"name": "realmId",
+		"signature": "",
 		"value": target.realm_name
 	})]);
 
