@@ -151,7 +151,7 @@ async fn index(
 			Ok(HttpResponse::Ok().json(TunnellerResponse {
 				tunnel_id: info.id.to_owned(),
 				realm: info.realm.to_owned(),
-				public_port: 123,
+				public_port,
 			}))
 		}
 	}
