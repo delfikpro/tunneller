@@ -39,8 +39,9 @@ impl PortManager {
 		Err(())
 	}
 
-    pub fn add_tunnel(&mut self, id: String, tunnel: Arc<Mutex<Tunnel>>) {
+    pub fn add_tunnel(&mut self, id: String, public_port: i32, tunnel: Arc<Mutex<Tunnel>>) {
         self.tunnels.insert(id, tunnel);
+        self.used_ports[(public_port - self.port_range_start) as usize] = true;
     }
 
     pub async fn remove_tunnel(&mut self, tunnel_id: String) -> bool {

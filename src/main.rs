@@ -147,7 +147,7 @@ async fn index(
 				println!("Creating tunnel...");
                 panic!("Connection closed {}", create_tunnel(arc_2).await.unwrap_err());
             });
-            port_manager.add_tunnel(info.id.to_string(), arc);
+            port_manager.add_tunnel(info.id.to_string(), public_port, arc);
 
 			Ok(HttpResponse::Ok().json(TunnellerResponse {
 				tunnel_id: info.id.to_owned(),
