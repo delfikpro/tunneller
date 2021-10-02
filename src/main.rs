@@ -29,7 +29,9 @@ async fn handle_stream(
 	mut upstream: TcpStream,
 	target_mutex: &Mutex<Tunnel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-	let target = target_mutex.lock().await;
+	println!("Locking on tunnel...");
+	let target = target_mutex.lock().await.clone();
+	println!("Got a tunnel copy, waiting for the handshake...");
 
 	let mut buf = Vec::new();
 	let mut handshake: Handshake = upstream.read_packet(&mut buf).await?.decode()?;

@@ -16,7 +16,7 @@ pub struct TunnellerResponse {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tunnel {
 
     pub id: String,
