@@ -67,11 +67,11 @@ async fn handle_stream(
 
 	println!("Linking the bridge");
 
-	Err(Box::new(
-		tokio::io::copy_bidirectional(&mut upstream, &mut downstream)
-			.await
-			.unwrap_err(),
-	))
+	match tokio::io::copy_bidirectional(&mut upstream, &mut downstream)
+				.await {
+		Ok(_) => Ok(()),
+		Err(err) => Err(Box::new(err)),
+	}
 }
 
 async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn std::error::Error>> {
@@ -94,9 +94,14 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn s
 		let mutex_arc_2 = tunnel_mutex.clone();
 
 		tokio::spawn(async move {
-			if let Err(e) = handle_stream(stream, mutex_arc_2.as_ref()).await {
-				println!("User error: {:?}", e);
-			};
+			match handle_stream(stream, mutex_arc_2.as_ref()).await {
+				Ok(_) => {
+					println!("handle_stream terminated successfully")
+				},
+				Err(err) => {
+					println!("User error: {:?}", err);
+				},
+			}
 		});
 	}
 }
@@ -114,7 +119,8 @@ async fn index(
 	let mut port_manager = data.0.lock().await;
 	match &port_manager.get_tunnel(&info.id) {
 		Some(tunnel) => {
-            let t = tunnel.lock().await;
+            let mut t = tunnel.lock().await;
+			t.realm_name = info.realm.clone();
             Ok(HttpResponse::Ok().json(TunnellerResponse {
                 tunnel_id: t.id.to_owned(),
                 realm: t.realm_name.to_owned(),
