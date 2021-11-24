@@ -29,10 +29,15 @@ async fn handle_stream(
 	target_mutex: &Mutex<Tunnel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	println!("Locking on tunnel...");
-	let target_instance = target_mutex.lock().await;
-	let realm_name = target_instance.realm_name.clone();
-	let destination_host = target_instance.destination_host.clone();
-	let destination_port = target_instance.destination_port;
+	let realm_name: String;
+	let destination_host: String;
+	let destination_port: i32;
+	{
+		let target_instance = target_mutex.lock().await;
+		realm_name = target_instance.realm_name.clone();
+		destination_host = target_instance.destination_host.clone();
+		destination_port = target_instance.destination_port;
+	}
 	println!("Got a tunnel copy, waiting for the handshake...");
 
 	let mut buf = Vec::new();

@@ -8,6 +8,8 @@ pub struct Varint21 {
 	pub size: u8,
 }
 impl Varint21 {
+	
+	#[allow(dead_code)]
 	fn read(mut read: impl Read) -> io::Result<Self> {
 		let mut buf = [0];
 		let mut ans = 0;
@@ -43,6 +45,7 @@ impl<'t> MinecraftPacket<'t> {
 		T::read(&mut self.data)
 	}
 
+	#[allow(dead_code)]
 	pub async fn write<W: AsyncWrite + Unpin + Send>(
 		self,
 		buf: &mut W,
@@ -198,6 +201,7 @@ pub trait MinecraftAsyncWriteExt: AsyncWrite + Unpin {
 }
 impl<T> MinecraftAsyncWriteExt for T where T: AsyncWrite + Unpin {}
 
+#[allow(dead_code)]
 pub fn varint_size(mut value: i32) -> usize {
 	let mut size = 0;
 	loop {
