@@ -5,14 +5,13 @@ mod protocol;
 mod tunnel;
 
 use actix_web::*;
-use actix_web::dev::Service;
 use actix_web::middleware::Logger;
 use ext::*;
 extern crate lazy_static;
 
 use fast_async_mutex::mutex::Mutex;
-use futures::FutureExt;
-use log::logger;
+use futures::{FutureExt};
+use futures::channel::oneshot::{Receiver, Sender, channel};
 use protocol::handshake::Handshake;
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -30,13 +29,16 @@ async fn handle_stream(
 	target_mutex: &Mutex<Tunnel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	println!("Locking on tunnel...");
-	let target = target_mutex.lock().await.clone();
+	let target_instance = target_mutex.lock().await;
+	let realm_name = target_instance.realm_name.clone();
+	let destination_host = target_instance.destination_host.clone();
+	let destination_port = target_instance.destination_port;
 	println!("Got a tunnel copy, waiting for the handshake...");
 
 	let mut buf = Vec::new();
 	let mut handshake: Handshake = upstream.read_packet(&mut buf).await?.decode()?;
 
-	println!("Got handshake for {:?}: {:?}", target, handshake);
+	println!("Got handshake for {:?}: {:?}", realm_name, handshake);
 
 	let args = handshake.address.split("\0").collect::<Vec<&str>>();
 
@@ -45,7 +47,7 @@ async fn handle_stream(
 	json.as_array_mut().unwrap().append(&mut vec![json!({
 		"name": "realmId",
 		"signature": "",
-		"value": target.realm_name
+		"value": realm_name
 	})]);
 
 	handshake.address = format!(
@@ -56,7 +58,7 @@ async fn handle_stream(
 		json.to_string()
 	);
 
-	let address: SocketAddr = format!("{}:{}", target.destination_host, target.destination_port)
+	let address: SocketAddr = format!("{}:{}", destination_host, destination_port)
 		.parse()
 		.unwrap();
 	println!("Creating a bridge to {}", address);
@@ -74,7 +76,9 @@ async fn handle_stream(
 	}
 }
 
-async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn std::error::Error>> {
+async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>, 
+	mut kill_receiver: Receiver<()>,
+	kill_sender: Sender<()>) -> Result<(), Box<dyn std::error::Error>> {
 
 	let address: String;
 	{
@@ -82,27 +86,40 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>) -> Result<(), Box<dyn s
 		address = format!("0.0.0.0:{}", tunnel.public_port);
 	}
 
-	println!("Bindning tunnel listener to {}", address);
+	println!("Binding tunnel listener to {}", address);
 	let listener = TcpListener::bind(&address).await?;
 	println!("Bound tunnel listener to {}", address);
 
 	loop {
+
 		println!("Awaiting connection...");
-		let (stream, _) = listener.accept().await?;
-		println!("Got connection: {:?}", stream);
+		futures::select! {
+			result = listener.accept().fuse() => {
+				let (stream, _) = result?;
+				println!("Got connection: {:?}", stream);
+		
+				let mutex_arc_2 = tunnel_mutex.clone();
+		
+				tokio::spawn(async move {
+					match handle_stream(stream, &mutex_arc_2.clone()).await {
+						Ok(_) => {
+							println!("handle_stream terminated successfully")
+						},
+						Err(err) => {
+							println!("Error: {:?}", err);
+						},
+					}
+				});
 
-		let mutex_arc_2 = tunnel_mutex.clone();
-
-		tokio::spawn(async move {
-			match handle_stream(stream, mutex_arc_2.as_ref()).await {
-				Ok(_) => {
-					println!("handle_stream terminated successfully")
-				},
-				Err(err) => {
-					println!("User error: {:?}", err);
-				},
+			},
+			_ = kill_receiver => {
+				println!("Killing tunnel {:?}...", address);
+				drop(listener);
+				println!("Killed tunnel {:?}.", address);
+				kill_sender.send(()).expect("kill response sender error");
+				return Ok(())
 			}
-		});
+		}
 	}
 }
 
@@ -117,18 +134,30 @@ async fn index(
 ) -> Result<HttpResponse> {
 	let runtime = &data.1;
 	let mut port_manager = data.0.lock().await;
-	match &port_manager.get_tunnel(&info.id) {
+	let tunnel_id = info.id.clone();
+	let realm_name = info.realm.clone();
+
+	let a = &port_manager.get_tunnel(&tunnel_id.clone());
+	match a {
 		Some(tunnel) => {
-            let mut t = tunnel.lock().await;
-			t.realm_name = info.realm.clone();
+			let public_port: i32;
+			{
+				let mut t = tunnel.lock().await;
+				t.realm_name = realm_name.clone();
+				public_port = t.public_port;
+			}
+			if realm_name.is_empty() {
+				port_manager.remove_tunnel(&tunnel_id).await;
+			}
             Ok(HttpResponse::Ok().json(TunnellerResponse {
-                tunnel_id: t.id.to_owned(),
-                realm: t.realm_name.to_owned(),
-                public_port: t.public_port,
+                tunnel_id,
+                realm: info.realm.clone(),
+                public_port,
             }))
         },
 		None => {
 			println!("Allocating port...");
+
 			let public_port = match port_manager.allocate_port() {
 				Ok(port) => port,
 				Err(_) => {
@@ -137,13 +166,15 @@ async fn index(
 				}
 			};
 			println!("Allocated port {}", public_port);
-
+			let (kill_request_sender, kill_request_receiver) = channel::<()>();
+			let (kill_response_sender, kill_response_receiver) = channel::<()>();
+			
 			let tunnel = Tunnel {
 				id: info.id.to_string(),
 				realm_name: info.realm.to_string(),
 				public_port,
 				destination_host: request.peer_addr().unwrap().ip().to_string(),
-				destination_port: info.dst_port,
+				destination_port: info.dst_port
 			};
 
 			let tunnel_mutex = Mutex::new(tunnel);
@@ -153,9 +184,11 @@ async fn index(
 			println!("Creating tunnel thread...");
 			runtime.spawn(async move {
 				println!("Creating tunnel...");
-                panic!("Connection closed {}", create_tunnel(arc_2).await.unwrap_err());
+                panic!("Connection closed {}", create_tunnel(arc_2, kill_request_receiver, kill_response_sender)
+				.await.unwrap_err());
             });
-            port_manager.add_tunnel(info.id.to_string(), public_port, arc);
+            port_manager.add_tunnel(info.id.to_string(), public_port, arc,
+		kill_request_sender, kill_response_receiver);
 
 			Ok(HttpResponse::Ok().json(TunnellerResponse {
 				tunnel_id: info.id.to_owned(),

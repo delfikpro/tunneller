@@ -16,13 +16,13 @@ pub struct TunnellerResponse {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tunnel {
 
     pub id: String,
 	pub realm_name: String,
 	pub public_port: i32,
 	pub destination_host: String,
-	pub destination_port: i32,
+	pub destination_port: i32
 
 }
