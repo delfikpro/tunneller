@@ -179,12 +179,14 @@ async fn index(
 			let (kill_request_sender, kill_request_receiver) = channel::<()>();
 			let (kill_response_sender, kill_response_receiver) = channel::<()>();
 			
+			let t = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 			let tunnel = Tunnel {
 				id: info.id.to_string(),
 				realm_name: info.realm.to_string(),
 				public_port,
 				destination_host: request.peer_addr().unwrap().ip().to_string(),
-				destination_port: info.dst_port
+				destination_port: info.dst_port,
+				last_alive_time: t
 			};
 
 			let tunnel_mutex = Mutex::new(tunnel);
@@ -242,10 +244,20 @@ async fn main() -> std::io::Result<()> {
 		let mut interval_day = time::interval(Duration::from_secs(1));
 		loop {
 			let now = interval_day.tick().await;
+			let time = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 
 			let port_manager = b.0.lock().await;
 			for ele in &port_manager.tunnels {
-				println!("Tunnel {} has {} references", ele.0, Arc::strong_count(&ele.1));
+				let mut t = ele.1.lock().await;
+				if Arc::strong_count(&ele.1) <= 2 {
+					if time - t.last_alive_time > 5000 {
+						println!("Tunnel {} is dead for 30+ seconds", ele.0)
+					}
+				} else {
+					println!("Tunnel {} is alive", ele.0);
+					t.last_alive_time = time
+				}
+				// println!("Tunnel {} has {} references", ele.0, );
 			}
 
 			println!("Renew sitemaps for each day. (Time now = {:?})", now);
