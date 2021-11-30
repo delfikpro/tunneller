@@ -196,8 +196,12 @@ async fn index(
 			println!("Creating tunnel thread...");
 			runtime.spawn(async move {
 				println!("Creating tunnel...");
-                panic!("Connection closed {}", create_tunnel(arc_2, kill_request_receiver, kill_response_sender)
-				.await.unwrap_err());
+				let result = create_tunnel(arc_2, kill_request_receiver, kill_response_sender)
+				.await;
+				match result {
+					Ok(_) => {},
+					Err(err) => println!("{}", err),
+				}
             });
             port_manager.add_tunnel(info.id.to_string(), public_port, arc,
 		kill_request_sender, kill_response_receiver);
