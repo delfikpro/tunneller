@@ -258,8 +258,8 @@ async fn main() -> std::io::Result<()> {
 			for ele in tunnels {
 				let mut t = ele.1.lock().await;
 				if Arc::strong_count(&ele.1) <= 2 {
-					if time - t.last_alive_time > 5000 {
-						println!("Tunnel {} is dead for 30+ seconds", ele.0);
+					if time - t.last_alive_time > 60000 {
+						println!("Tunnel {} is dead for 60+ seconds", ele.0);
 						dead_tunnels.push(ele.0.to_owned());
 					}
 				} else {
