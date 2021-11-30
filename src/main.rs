@@ -274,7 +274,7 @@ async fn main() -> std::io::Result<()> {
 				port_manager.remove_tunnel(&ele).await;
 			}
 
-			println!("Renew sitemaps for each day. (Time now = {:?})", now);
+			// println!("Renew sitemaps for each day. (Time now = {:?})", now);
 		}
 	});
 
