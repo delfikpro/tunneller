@@ -247,7 +247,7 @@ async fn main() -> std::io::Result<()> {
 	a.spawn(async move {
 		let mut interval_day = time::interval(Duration::from_secs(1));
 		loop {
-			let now = interval_day.tick().await;
+			interval_day.tick().await;
 			let time = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 
 			let mut dead_tunnels: Vec<String> = Vec::new();
