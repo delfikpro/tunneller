@@ -246,24 +246,28 @@ async fn main() -> std::io::Result<()> {
 			let now = interval_day.tick().await;
 			let time = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 
-			let port_manager = b.0.lock().await;
-			let mut dead_tunnels: Vec<&String> = Vec::new();
-			for ele in &port_manager.tunnels {
+			let mut dead_tunnels: Vec<String> = Vec::new();
+
+			let mut port_manager = b.0.lock().await;
+			
+			let tunnels = &port_manager.tunnels;
+			for ele in tunnels {
 				let mut t = ele.1.lock().await;
 				if Arc::strong_count(&ele.1) <= 2 {
 					if time - t.last_alive_time > 5000 {
 						println!("Tunnel {} is dead for 30+ seconds", ele.0);
-						dead_tunnels.push(ele.0);
+						dead_tunnels.push(ele.0.to_owned());
 					}
 				} else {
 					t.last_alive_time = time
 				}
 				// println!("Tunnel {} has {} references", ele.0, );
 			}
+			
 
-			let mut port_manager = b.0.lock().await;
+			// let mut port_manager = b.0.lock().await;
 			for ele in dead_tunnels {
-				port_manager.remove_tunnel(ele).await;
+				port_manager.remove_tunnel(&ele).await;
 			}
 
 			println!("Renew sitemaps for each day. (Time now = {:?})", now);
