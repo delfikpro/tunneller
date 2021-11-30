@@ -32,7 +32,7 @@ async fn handle_stream(
 	mut upstream: TcpStream,
 	target_mutex: &Mutex<Tunnel>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-	println!("Locking on tunnel...");
+	// println!("Locking on tunnel...");
 	let realm_name: String;
 	let destination_host: String;
 	let destination_port: i32;
@@ -42,12 +42,12 @@ async fn handle_stream(
 		destination_host = target_instance.destination_host.clone();
 		destination_port = target_instance.destination_port;
 	}
-	println!("Got a tunnel copy, waiting for the handshake...");
+	// println!("Got a tunnel copy, waiting for the handshake...");
 
 	let mut buf = Vec::new();
 	let mut handshake: Handshake = upstream.read_packet(&mut buf).await?.decode()?;
 
-	println!("Got handshake for {:?}: {:?}", realm_name, handshake);
+	// println!("Got handshake for {:?}: {:?}", realm_name, handshake);
 
 	let args = handshake.address.split("\0").collect::<Vec<&str>>();
 
@@ -70,13 +70,13 @@ async fn handle_stream(
 	let address: SocketAddr = format!("{}:{}", destination_host, destination_port)
 		.parse()
 		.unwrap();
-	println!("Creating a bridge to {}", address);
+	println!("Tunnelling connection to {} with realm {}", address, realm_name);
 	let mut downstream = TcpStream::connect(address).await?;
 
-	println!("Sending handshake: {:?}", handshake);
+	// println!("Sending handshake: {:?}", handshake);
 	downstream.write_packet(&handshake).await?;
 
-	println!("Linking the bridge");
+	// println!("Linking the bridge");
 
 	match tokio::io::copy_bidirectional(&mut upstream, &mut downstream)
 				.await {
@@ -247,17 +247,23 @@ async fn main() -> std::io::Result<()> {
 			let time = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 
 			let port_manager = b.0.lock().await;
+			let mut dead_tunnels: Vec<&String> = Vec::new();
 			for ele in &port_manager.tunnels {
 				let mut t = ele.1.lock().await;
 				if Arc::strong_count(&ele.1) <= 2 {
 					if time - t.last_alive_time > 5000 {
-						println!("Tunnel {} is dead for 30+ seconds", ele.0)
+						println!("Tunnel {} is dead for 30+ seconds", ele.0);
+						dead_tunnels.push(ele.0);
 					}
 				} else {
-					println!("Tunnel {} is alive", ele.0);
 					t.last_alive_time = time
 				}
 				// println!("Tunnel {} has {} references", ele.0, );
+			}
+
+			let mut port_manager = b.0.lock().await;
+			for ele in dead_tunnels {
+				port_manager.remove_tunnel(ele).await;
 			}
 
 			println!("Renew sitemaps for each day. (Time now = {:?})", now);
