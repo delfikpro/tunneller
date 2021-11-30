@@ -1,3 +1,4 @@
+// use futures::channel::oneshot::Sender;
 use serde::*;
 
 #[derive(Deserialize)]
@@ -23,6 +24,7 @@ pub struct Tunnel {
 	pub realm_name: String,
 	pub public_port: i32,
 	pub destination_host: String,
-	pub destination_port: i32
+	pub destination_port: i32,
+    // pub kill_sender: Sender<()>
 
 }

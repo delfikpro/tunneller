@@ -8,6 +8,10 @@ use actix_web::*;
 use actix_web::middleware::Logger;
 use ext::*;
 extern crate lazy_static;
+extern crate futures;
+
+use tokio::time;
+use std::time::*;
 
 use fast_async_mutex::mutex::Mutex;
 use futures::{FutureExt};
@@ -90,6 +94,7 @@ async fn create_tunnel(tunnel_mutex: Arc<Mutex<Tunnel>>,
 		let tunnel = tunnel_mutex.lock().await;
 		address = format!("0.0.0.0:{}", tunnel.public_port);
 	}
+
 
 	println!("Binding tunnel listener to {}", address);
 	let listener = TcpListener::bind(&address).await?;
@@ -230,6 +235,23 @@ async fn main() -> std::io::Result<()> {
 		port_range_start,
 		port_range_size,
 	)), rt));
+
+	let b = port_manager_arc.clone();
+	let a = &port_manager_arc.1;
+	a.spawn(async move {
+		let mut interval_day = time::interval(Duration::from_secs(1));
+		loop {
+			let now = interval_day.tick().await;
+
+			let port_manager = b.0.lock().await;
+			for ele in &port_manager.tunnels {
+				println!("Tunnel {} has {} references", ele.0, Arc::strong_count(&ele.1));
+			}
+
+			println!("Renew sitemaps for each day. (Time now = {:?})", now);
+		}
+	});
+
 	HttpServer::new(move || {
 		App::new()
 		.app_data(port_manager_arc.clone())
@@ -264,59 +286,3 @@ pub enum TunnellerError {
 	#[error(transparent)]
 	Other(anyhow::Error),
 }
-
-// async fn new_client(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-// 	stream.write_u8(0x41).await.unwrap();
-// 	let realm_name = stream.read_string(50).await.unwrap();
-// 	let mut destination_host = stream.read_string(255).await.unwrap();
-// 	if destination_host.is_empty() {
-// 		destination_host = stream.peer_addr().unwrap().ip().to_string();
-// 		println!(
-// 			"Using client ip as the destination host: {}",
-// 			destination_host
-// 		)
-// 	}
-
-// 	let destination_port = stream.read_u16().await.unwrap();
-
-// 	let public_port: u16;
-
-// 	match port_manager.allocate_port() {
-// 		Ok(v) => public_port = v,
-// 		_ => {
-// 			// too many active servers on this tunneller instance
-// 			stream.write_u8(1).await.unwrap();
-// 			return Err(Box::new(TunnellerError::NoFreePorts));
-// 		}
-// 	};
-
-// 	println!(
-// 		"Tunnelling realm {} on {}:{} through 0.0.0.0:{}",
-// 		realm_name, destination_host, destination_port, public_port
-// 	);
-
-// 	let tunnel = TunnelInfo {
-// 		realm_name,
-// 		public_port,
-// 		destination_host,
-// 		destination_port,
-// 	};
-
-// 	let tunnel_arc = Arc::new(Mutex::new(tunnel));
-// 	let tunnel_arc_local = tunnel_arc.clone();
-
-// 	tokio::spawn(async move {
-// 		create_tunnel(tunnel_arc.as_ref()).await.unwrap();
-// 	});
-
-// 	// success
-// 	stream.write_u8(0).await.unwrap();
-// 	stream.write_u16(public_port).await.unwrap();
-
-// 	loop {
-// 		// when a node sends new realm name - we update it
-// 		// it also works as keepalive
-// 		tunnel_arc_local.lock().unwrap().realm_name = stream.read_string(50).await.unwrap();
-// 		stream.write_u8(0).await.unwrap();
-// 	}
-// }
