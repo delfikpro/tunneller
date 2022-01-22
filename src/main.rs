@@ -135,7 +135,7 @@ async fn create_tunnel(
 }
 
 #[get("/tunnels")]
-async fn get_tunnels(_: HttpRequest, data: web::Data<Application>) -> Result<HttpResponse> {
+async fn get_tunnels(_: HttpRequest, data: web::Data<Arc<Application>>) -> Result<HttpResponse> {
 	let port_manager = data.port_manager_mutex.lock().await;
 	let mut tunnels = Vec::<Tunnel>::new();
 	for ele in &port_manager.tunnels {
@@ -151,7 +151,7 @@ async fn get_tunnels(_: HttpRequest, data: web::Data<Application>) -> Result<Htt
 async fn index(
 	request: HttpRequest,
 	info: web::Query<tunnel::TunnellerRequest>,
-	data: web::Data<Application>,
+	data: web::Data<Arc<Application>>,
 	// tokio_runtime: web::Data<Runtime>,
 ) -> Result<HttpResponse> {
 	let mut port_manager = data.port_manager_mutex.lock().await;
