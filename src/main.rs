@@ -11,10 +11,10 @@ extern crate futures;
 extern crate lazy_static;
 
 use nats::Connection;
+use parking_lot::Mutex;
 use std::time::*;
 use tokio::time;
 
-use fast_async_mutex::mutex::Mutex;
 use futures::channel::oneshot::{channel, Receiver, Sender};
 use futures::FutureExt;
 use protocol::handshake::Handshake;
@@ -37,7 +37,7 @@ async fn handle_stream(
 	let destination_host: String;
 	let destination_port: i32;
 	{
-		let target_instance = target_mutex.lock().await;
+		let target_instance = target_mutex.lock();
 		realm_name = target_instance.realm_name.clone();
 		destination_host = target_instance.destination_host.clone();
 		destination_port = target_instance.destination_port;
@@ -94,7 +94,7 @@ async fn create_tunnel(
 ) -> Result<(), Box<dyn std::error::Error>> {
 	let address: String;
 	{
-		let tunnel = tunnel_mutex.lock().await;
+		let tunnel = tunnel_mutex.lock();
 		address = format!("0.0.0.0:{}", tunnel.public_port);
 	}
 
@@ -136,10 +136,9 @@ async fn create_tunnel(
 
 #[get("/tunnels")]
 async fn get_tunnels(_: HttpRequest, data: web::Data<Arc<Application>>) -> Result<HttpResponse> {
-	let port_manager = data.port_manager_mutex.lock().await;
 	let mut tunnels = Vec::<Tunnel>::new();
-	for ele in &port_manager.tunnels {
-		let t = ele.1.lock().await.clone();
+	for ele in &data.port_manager.mutex.lock().tunnels {
+		let t = ele.1.lock().clone();
 		tunnels.push(t);
 	}
 	return Ok(HttpResponse::Ok().json(tunnels));
@@ -154,7 +153,7 @@ async fn index(
 	data: web::Data<Arc<Application>>,
 	// tokio_runtime: web::Data<Runtime>,
 ) -> Result<HttpResponse> {
-	let mut port_manager = data.port_manager_mutex.lock().await;
+	let port_manager = data.port_manager.clone();
 	let tunnel_id = info.id.clone();
 	let realm_name = info.realm.clone();
 
@@ -166,7 +165,7 @@ async fn index(
 		Some(tunnel) => {
 			let public_port: i32;
 			{
-				let mut t = tunnel.lock().await;
+				let mut t = tunnel.lock();
 				t.realm_name = realm_name.clone();
 				public_port = t.public_port;
 			}
@@ -204,10 +203,9 @@ async fn create_and_init_tunnel(
 	app: &Arc<Application>,
 	info: &TunnellerRequest,
 ) -> Result<Tunnel, ()> {
-	let mut port_manager = app.port_manager_mutex.lock().await;
 	println!("Allocating port...");
 
-	let public_port = match port_manager.allocate_port() {
+	let public_port = match app.port_manager.allocate_port() {
 		Ok(port) => port,
 		Err(_) => {
 			println!("No free ports available");
@@ -259,16 +257,17 @@ async fn create_and_init_tunnel(
 		let app = app.clone();
 		handler = subscription.with_handler(move |msg| {
 			app.rt.block_on(async {
-				let mut tunnel = tunnel_mutex.lock().await;
+				let mut tunnel = tunnel_mutex.lock();
 				tunnel.last_issuer_alive_time = current_time_millis();
-				let request: TunnellerRequest = serde_json::from_str(std::str::from_utf8(&msg.data).unwrap()).unwrap();
+				let request: TunnellerRequest =
+					serde_json::from_str(std::str::from_utf8(&msg.data).unwrap()).unwrap();
 				tunnel.realm_name = request.realm;
 			});
 			Ok(())
 		});
 	}
 
-	port_manager.add_tunnel(
+	app.port_manager.add_tunnel(
 		info.id.to_string(),
 		public_port,
 		tunnel_mutex,
@@ -293,7 +292,7 @@ struct Application {
 	pub public_host: String,
 	// pub port_range_start: i32,
 	// pub port_range_size: i32,
-	pub port_manager_mutex: Arc<Mutex<PortManager>>,
+	pub port_manager: Arc<PortManager>,
 	pub rt: Arc<tokio::runtime::Runtime>,
 	pub broker: Arc<Connection>,
 }
@@ -321,10 +320,7 @@ async fn main0() -> std::io::Result<()> {
 		}
 	};
 
-	let port_manager_mutex = Arc::new(Mutex::new(create_port_manager(
-		port_range_start,
-		port_range_size,
-	)));
+	let port_manager = Arc::new(create_port_manager(port_range_start, port_range_size));
 
 	let broker = Arc::new(nats::connect("127.0.0.1:4222")?);
 
@@ -340,7 +336,7 @@ async fn main0() -> std::io::Result<()> {
 		public_host,
 		// port_range_start,
 		// port_range_size,
-		port_manager_mutex,
+		port_manager,
 		rt,
 		broker,
 	});
@@ -355,10 +351,10 @@ async fn main0() -> std::io::Result<()> {
 			.subscribe("cristalixconnect.main.tunnellerinfo.request")?
 			.with_handler(move |_| {
 				app.rt.block_on(async {
-					let port_manager = app.port_manager_mutex.lock().await;
+					let port_manager = app.port_manager.clone();
 					let mut tunnels = Vec::<Tunnel>::new();
-					for ele in &port_manager.tunnels {
-						let t = ele.1.lock().await.clone();
+					for ele in &port_manager.mutex.lock().tunnels {
+						let t = ele.1.lock().clone();
 						tunnels.push(t);
 					}
 					app.broker.publish(
@@ -385,12 +381,12 @@ async fn main0() -> std::io::Result<()> {
 
 		// ToDo: Maybe worth making this code non-blocking
 		match app_clone.rt.block_on(async {
-			let port_manager = app_clone.port_manager_mutex.lock().await;
+			let port_manager = app_clone.port_manager.clone();
 			let existing_tunnel = port_manager.get_tunnel(&tunnel_id.clone());
 			drop(port_manager);
 			match existing_tunnel {
 				Some(tunnel) => {
-					let mut t = tunnel.lock().await;
+					let mut t = tunnel.lock();
 					t.realm_name = realm_name.clone();
 					// ToDo: remove realm if empty id
 					Ok(t.clone())
@@ -427,49 +423,50 @@ async fn main0() -> std::io::Result<()> {
 
 			let mut dead_tunnels: Vec<String> = Vec::new();
 
-			let mut port_manager = app_clone.port_manager_mutex.lock().await;
+			{
+				let port_manager = app_clone.port_manager.clone();
 
-			let tunnels = &port_manager.tunnels;
-			println!("Currently there are {} tunnels", tunnels.keys().len());
-			for ele in tunnels {
-				let mut t = ele.1.lock().await;
-				let ref_count = Arc::strong_count(&ele.1);
-				if ref_count <= 3 {
-					if time - t.last_occupied_time > 60000
-						&& time - t.last_issuer_alive_time > 15000
-					{
-						println!("Tunnel {} is dead for 60+ seconds", ele.0);
-						dead_tunnels.push(ele.0.to_owned());
+				let tunnels = &port_manager.mutex.lock().tunnels;
+				println!("Currently there are {} tunnels", tunnels.keys().len());
+				for ele in tunnels {
+					let mut t = ele.1.lock();
+					let ref_count = Arc::strong_count(&ele.1);
+					if ref_count <= 3 {
+						if time - t.last_occupied_time > 60000
+							&& time - t.last_issuer_alive_time > 15000
+						{
+							println!("Tunnel {} is dead for 60+ seconds", ele.0);
+							dead_tunnels.push(ele.0.to_owned());
+						}
+					} else {
+						println!(
+							"Tunnel {} is alive and has {} references",
+							t.id,
+							Arc::strong_count(&ele.1)
+						);
+						t.last_occupied_time = time;
 					}
-				} else {
-					println!(
-						"Tunnel {} is alive and has {} references",
-						t.id,
-						Arc::strong_count(&ele.1)
-					);
-					t.last_occupied_time = time;
+
+					// 3 references to the tunnel mutex from different parts of program & two more for each active connection
+					t.online = (ref_count as i32 - 3) / 2;
+
+					let broker_subject = format!("cristalixconnect.main.tunnelalive.{}", t.id);
+					app_clone
+						.broker
+						.publish(
+							broker_subject.as_str(),
+							serde_json::to_string(&t.clone()).unwrap().as_bytes(),
+						)
+						.unwrap();
+					// println!("Tunnel {} has {} references", ele.0, );
 				}
-
-				// 3 references to the tunnel mutex from different parts of program & two more for each active connection
-				t.online = (ref_count as i32 - 3) / 2;
-
-				let broker_subject = format!("cristalixconnect.main.tunnelalive.{}", t.id);
-				app_clone
-					.broker
-					.publish(
-						broker_subject.as_str(),
-						serde_json::to_string(&t.clone()).unwrap().as_bytes(),
-					)
-					.unwrap();
-				// println!("Tunnel {} has {} references", ele.0, );
 			}
 
-			// let mut port_manager = b.0.lock().await;
+			let port_manager = app_clone.port_manager.clone();
 			for ele in dead_tunnels {
 				port_manager.remove_tunnel(&ele).await;
 			}
 
-			// println!("Renew sitemaps for each day. (Time now = {:?})", now);
 		}
 	});
 
