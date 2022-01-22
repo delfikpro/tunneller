@@ -26,7 +26,8 @@ pub struct Tunnel {
 	pub public_port: i32,
 	pub destination_host: String,
 	pub destination_port: i32,
-    pub last_alive_time: u128,
+    pub last_occupied_time: u128,
+    pub last_issuer_alive_time: u128,
     pub online: i32,
     // pub kill_sender: Sender<()>
 

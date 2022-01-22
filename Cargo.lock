@@ -442,29 +442,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c59e7af012c713f529e7a3ee57ce9b31ddd858d4b512923602f74608b009631"
 
 [[package]]
-name = "bungee"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "anyhow",
- "async-trait",
- "byteorder",
- "derive-packetdata",
- "env_logger",
- "fast-async-mutex",
- "futures",
- "impl-trait-for-tuples",
- "lazy_static",
- "log",
- "nats",
- "public-ip",
- "serde",
- "serde_json",
- "thiserror",
- "tokio 1.7.1",
-]
-
-[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1419,9 +1396,9 @@ dependencies = [
 
 [[package]]
 name = "nats"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d777a1844c3c5f4148df755a978fd99bb27c898d9bf016de723cf3ffcea5f5d"
+checksum = "c3054a42edc75a723c9e4bafc23f54bd666d51f54ed37e9f56b04cdc92785e50"
 dependencies = [
  "base64",
  "base64-url",
@@ -1431,6 +1408,7 @@ dependencies = [
  "fastrand",
  "itoa",
  "json",
+ "lazy_static",
  "libc",
  "log",
  "memchr",
@@ -1441,8 +1419,11 @@ dependencies = [
  "regex",
  "rustls",
  "rustls-native-certs",
+ "rustls-pemfile",
  "serde",
  "serde_json",
+ "serde_nanos",
+ "serde_repr",
  "url",
  "webpki",
  "winapi 0.3.9",
@@ -1901,6 +1882,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-pemfile"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eebeaeb360c87bfb72e84abdb3447159c0eaececf1bef2aecd65a8be949d1c9"
+dependencies = [
+ "base64",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2017,6 +2007,26 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_nanos"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef330a626d4b4ae91d624677b11d485288b69df5cda4b0725434d133065fff5"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98d0516900518c29efa217c298fa1f4e6c6ffc85ae29fd7f4ee48f176e1a9ed5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -2539,6 +2549,29 @@ name = "try-lock"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
+
+[[package]]
+name = "tunneller"
+version = "2.0.0"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "async-trait",
+ "byteorder",
+ "derive-packetdata",
+ "env_logger",
+ "fast-async-mutex",
+ "futures",
+ "impl-trait-for-tuples",
+ "lazy_static",
+ "log",
+ "nats",
+ "public-ip",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio 1.7.1",
+]
 
 [[package]]
 name = "typenum"

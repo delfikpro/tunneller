@@ -10,7 +10,7 @@ use ext::*;
 extern crate futures;
 extern crate lazy_static;
 
-use nats::Connection;
+use nats::{Connection};
 use std::time::*;
 use tokio::time;
 
@@ -180,27 +180,30 @@ async fn index(
 			}))
 		}
 		None => {
-			
 			let tunnel = create_and_init_tunnel(&data, &info).await;
 			match tunnel {
-				Ok(tunnel) => {
-					Ok(HttpResponse::Ok().json(TunnellerResponse {
-						tunnel_id: info.id.to_owned(),
-						realm: info.realm.to_owned(),
-						public_port: tunnel.public_port,
-					}))	
-				},
-				Err(_) => {
-					Ok(HttpResponse::ServiceUnavailable().body("No free ports available"))
-				},
+				Ok(tunnel) => Ok(HttpResponse::Ok().json(TunnellerResponse {
+					tunnel_id: info.id.to_owned(),
+					realm: info.realm.to_owned(),
+					public_port: tunnel.public_port,
+				})),
+				Err(_) => Ok(HttpResponse::ServiceUnavailable().body("No free ports available")),
 			}
-
 		}
 	}
 }
 
-async fn create_and_init_tunnel(app: &Arc<Application>, info: &TunnellerRequest) -> Result<Tunnel, ()> {
+fn current_time_millis() -> u128 {
+	SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.expect("Time went backwards")
+		.as_millis()
+}
 
+async fn create_and_init_tunnel(
+	app: &Arc<Application>,
+	info: &TunnellerRequest,
+) -> Result<Tunnel, ()> {
 	let mut port_manager = app.port_manager_mutex.lock().await;
 	println!("Allocating port...");
 
@@ -215,10 +218,7 @@ async fn create_and_init_tunnel(app: &Arc<Application>, info: &TunnellerRequest)
 	let (kill_request_sender, kill_request_receiver) = channel::<()>();
 	let (kill_response_sender, kill_response_receiver) = channel::<()>();
 
-	let t = SystemTime::now()
-		.duration_since(UNIX_EPOCH)
-		.expect("Time went backwards")
-		.as_millis();
+	let t = current_time_millis();
 	let tunnel = Tunnel {
 		id: info.id.to_string(),
 		realm_name: info.realm.to_string(),
@@ -226,34 +226,57 @@ async fn create_and_init_tunnel(app: &Arc<Application>, info: &TunnellerRequest)
 		public_host: app.public_host.clone(),
 		destination_host: info.dst_host.clone(),
 		destination_port: info.dst_port,
-		last_alive_time: t,
+		last_occupied_time: t,
+		last_issuer_alive_time: t,
 		online: 0,
 	};
 
-	let tunnel_mutex = Mutex::new(tunnel.clone());
+	let tunnel_mutex = Arc::new(Mutex::new(tunnel.clone()));
 
-	let arc = Arc::new(tunnel_mutex);
-	let arc_2 = arc.clone();
-	println!("Creating tunnel thread...");
-	app.rt.spawn(async move {
-		println!("Creating tunnel...");
-		let result =
-			create_tunnel(arc_2, kill_request_receiver, kill_response_sender).await;
-		match result {
-			Ok(_) => {}
-			Err(err) => println!("{}", err),
-		}
-	});
+	{
+		let tunnel_mutex = tunnel_mutex.clone();
+		println!("Creating tunnel thread...");
+		app.rt.spawn(async move {
+			println!("Creating tunnel...");
+			let result =
+				create_tunnel(tunnel_mutex, kill_request_receiver, kill_response_sender).await;
+			match result {
+				Ok(_) => {}
+				Err(err) => println!("{}", err),
+			}
+		});
+	}
+
+	let subscription = app.broker.subscribe(format!(
+		"cristalixconnect.main.tunnel_issuer_alive.{}",
+		tunnel.id
+	).as_str()).unwrap();
+
+	let handler;
+
+	{
+		let tunnel_mutex = tunnel_mutex.clone();
+		let app = app.clone();
+		handler = subscription.with_handler(move |_| {
+			app.rt.block_on(async {
+				tunnel_mutex.lock().await.last_issuer_alive_time = current_time_millis();
+			});
+			Ok(())
+		});
+	}
+
 	port_manager.add_tunnel(
 		info.id.to_string(),
 		public_port,
-		arc,
+		tunnel_mutex,
 		kill_request_sender,
 		kill_response_receiver,
+		handler
 	);
 
 	Ok(tunnel)
 }
+
 
 // fn main() {
 
@@ -266,8 +289,8 @@ async fn main() -> std::io::Result<()> {
 
 struct Application {
 	pub public_host: String,
-	pub port_range_start: i32,
-	pub port_range_size: i32,
+	// pub port_range_start: i32,
+	// pub port_range_size: i32,
 	pub port_manager_mutex: Arc<Mutex<PortManager>>,
 	pub rt: Arc<tokio::runtime::Runtime>,
 	pub broker: Arc<Connection>,
@@ -313,8 +336,8 @@ async fn main0() -> std::io::Result<()> {
 
 	let app = Arc::new(Application {
 		public_host,
-		port_range_start,
-		port_range_size,
+		// port_range_start,
+		// port_range_size,
 		port_manager_mutex,
 		rt,
 		broker,
@@ -360,70 +383,17 @@ async fn main0() -> std::io::Result<()> {
 
 		// ToDo: Maybe worth making this code non-blocking
 		match app_clone.rt.block_on(async {
-			let mut port_manager = app_clone.port_manager_mutex.lock().await;
-			let rt = &app_clone.rt;
-			let a = port_manager.get_tunnel(&tunnel_id.clone());
-			match a {
+			let port_manager = app_clone.port_manager_mutex.lock().await;
+			let existing_tunnel = port_manager.get_tunnel(&tunnel_id.clone());
+			drop(port_manager);
+			match existing_tunnel {
 				Some(tunnel) => {
 					let mut t = tunnel.lock().await;
 					t.realm_name = realm_name.clone();
 					// ToDo: remove realm if empty id
 					Ok(t.clone())
 				}
-				None => {
-					println!("Allocating port...");
-
-					let public_port = match port_manager.allocate_port() {
-						Ok(port) => port,
-						Err(_) => {
-							println!("No free ports available");
-							return Err(());
-						}
-					};
-
-					println!("Allocated port {}", public_port);
-					let (kill_request_sender, kill_request_receiver) = channel::<()>();
-					let (kill_response_sender, kill_response_receiver) = channel::<()>();
-
-					let t = SystemTime::now()
-						.duration_since(UNIX_EPOCH)
-						.expect("Time went backwards")
-						.as_millis();
-					let tunnel = Tunnel {
-						id: request.id.to_string(),
-						realm_name: request.realm.to_string(),
-						public_host: app_clone.public_host.clone(),
-						public_port,
-						destination_host: request.dst_host.clone(),
-						destination_port: request.dst_port,
-						last_alive_time: t,
-						online: 0,
-					};
-
-					let tunnel_mutex = Mutex::new(tunnel.clone());
-
-					let arc = Arc::new(tunnel_mutex);
-					let arc_2 = arc.clone();
-					println!("Creating tunnel thread...");
-					rt.spawn(async move {
-						println!("Creating tunnel...");
-						let result =
-							create_tunnel(arc_2, kill_request_receiver, kill_response_sender).await;
-						match result {
-							Ok(_) => {}
-							Err(err) => println!("{}", err),
-						}
-					});
-					port_manager.add_tunnel(
-						request.id.to_string(),
-						public_port,
-						arc,
-						kill_request_sender,
-						kill_response_receiver,
-					);
-
-					Ok(tunnel.clone())
-				}
+				None => create_and_init_tunnel(&app_clone, &request).await,
 			}
 		}) {
 			Ok(tunnel) => {
@@ -462,8 +432,8 @@ async fn main0() -> std::io::Result<()> {
 			for ele in tunnels {
 				let mut t = ele.1.lock().await;
 				let ref_count = Arc::strong_count(&ele.1);
-				if ref_count <= 2 {
-					if time - t.last_alive_time > 60000 {
+				if ref_count <= 3 {
+					if time - t.last_occupied_time > 60000 && time - t.last_issuer_alive_time > 15000 {
 						println!("Tunnel {} is dead for 60+ seconds", ele.0);
 						dead_tunnels.push(ele.0.to_owned());
 					}
@@ -473,13 +443,12 @@ async fn main0() -> std::io::Result<()> {
 						t.id,
 						Arc::strong_count(&ele.1)
 					);
-					t.last_alive_time = time;
+					t.last_occupied_time = time;
 				}
 
 				t.online = ref_count as i32;
 
 				let broker_subject = format!("cristalixconnect.main.tunnelalive.{}", t.id);
-				println!("Subject: {}", broker_subject);
 				app_clone
 					.broker
 					.publish(
