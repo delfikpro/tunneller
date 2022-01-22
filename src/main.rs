@@ -10,7 +10,7 @@ use ext::*;
 extern crate futures;
 extern crate lazy_static;
 
-use nats::{Connection};
+use nats::Connection;
 use std::time::*;
 use tokio::time;
 
@@ -247,10 +247,10 @@ async fn create_and_init_tunnel(
 		});
 	}
 
-	let subscription = app.broker.subscribe(format!(
-		"cristalixconnect.main.tunnel_issuer_alive.{}",
-		tunnel.id
-	).as_str()).unwrap();
+	let subscription = app
+		.broker
+		.subscribe(format!("cristalixconnect.main.tunnel_issuer_alive.{}", tunnel.id).as_str())
+		.unwrap();
 
 	let handler;
 
@@ -271,12 +271,11 @@ async fn create_and_init_tunnel(
 		tunnel_mutex,
 		kill_request_sender,
 		kill_response_receiver,
-		handler
+		handler,
 	);
 
 	Ok(tunnel)
 }
-
 
 // fn main() {
 
@@ -433,7 +432,9 @@ async fn main0() -> std::io::Result<()> {
 				let mut t = ele.1.lock().await;
 				let ref_count = Arc::strong_count(&ele.1);
 				if ref_count <= 3 {
-					if time - t.last_occupied_time > 60000 && time - t.last_issuer_alive_time > 15000 {
+					if time - t.last_occupied_time > 60000
+						&& time - t.last_issuer_alive_time > 15000
+					{
 						println!("Tunnel {} is dead for 60+ seconds", ele.0);
 						dead_tunnels.push(ele.0.to_owned());
 					}
@@ -446,7 +447,8 @@ async fn main0() -> std::io::Result<()> {
 					t.last_occupied_time = time;
 				}
 
-				t.online = ref_count as i32;
+				// 3 references to the tunnel mutex from different parts of program & two more for each active connection
+				t.online = (ref_count as i32 - 3) / 2;
 
 				let broker_subject = format!("cristalixconnect.main.tunnelalive.{}", t.id);
 				app_clone
@@ -474,6 +476,7 @@ async fn main0() -> std::io::Result<()> {
 			// .app_data(rt_arc.clone())
 			.wrap(Logger::new("%a %t %r %s %b"))
 			.service(index)
+			.service(get_tunnels)
 	})
 	.disable_signals()
 	.bind(format!("0.0.0.0:{}", bind_port))?
