@@ -26,3 +26,5 @@ thiserror = "1.0.25"
 anyhow = "1.0.41"
 
 actix-web = "3"
+nats = "0.16.0"
+public-ip = "0.2.2"
