@@ -22,4 +22,4 @@ jobs:
     - uses: actions/upload-artifact@v2
       with:
         name: tunneller-binary
-        path: target/release/bungee
+        path: target/release/tunneller
