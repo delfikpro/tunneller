@@ -257,9 +257,12 @@ async fn create_and_init_tunnel(
 	{
 		let tunnel_mutex = tunnel_mutex.clone();
 		let app = app.clone();
-		handler = subscription.with_handler(move |_| {
+		handler = subscription.with_handler(move |msg| {
 			app.rt.block_on(async {
-				tunnel_mutex.lock().await.last_issuer_alive_time = current_time_millis();
+				let mut tunnel = tunnel_mutex.lock().await;
+				tunnel.last_issuer_alive_time = current_time_millis();
+				let request: TunnellerRequest = serde_json::from_str(std::str::from_utf8(&msg.data).unwrap()).unwrap();
+				tunnel.realm_name = request.realm;
 			});
 			Ok(())
 		});
