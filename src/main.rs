@@ -378,7 +378,7 @@ async fn main0() -> std::io::Result<()> {
 	subscription.with_handler(move |msg| {
 		let request: TunnellerRequest =
 			serde_json::from_str(std::str::from_utf8(&msg.data).unwrap())?;
-		println!("data: {}", request.id);
+		println!("data: {:?}", request);
 
 		let tunnel_id = request.id.clone();
 		let realm_name = request.realm.clone();

@@ -1,7 +1,7 @@
 // use futures::channel::oneshot::Sender;
 use serde::*;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct TunnellerRequest {
     pub id: String,
     pub realm: String,
