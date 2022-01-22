@@ -89,11 +89,12 @@ impl PortManager {
 		match option {
 			Some((tunnel, receiver, sender, subscription)) => {
 
-                // data.used_ports[(tunnel.public_port - self.port_range_start) as usize] = false;
-
 				sender.send(()).expect("kill request sender error");
 				receiver.await.expect("kill response receiver error");
 
+                {
+                    self.mutex.lock().used_ports[(tunnel.public_port - self.port_range_start) as usize] = false;
+                }
                 
 				println!("Marked port {} as free.", tunnel.public_port);
                 subscription.unsubscribe().unwrap();
