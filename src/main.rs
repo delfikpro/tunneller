@@ -411,62 +411,73 @@ async fn main0() -> std::io::Result<()> {
 		Ok(())
 	});
 
-	let app_clone = app.clone();
-	app.rt.spawn(async move {
-		let mut update_interval = time::interval(Duration::from_secs(1));
-		loop {
-			update_interval.tick().await;
-			let time = SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("Time went backwards")
-				.as_millis();
+	app.rt.spawn({
+		let app = app.clone();
+		async move {
+			let mut update_interval = time::interval(Duration::from_secs(1));
+			loop {
+				update_interval.tick().await;
+				let time = SystemTime::now()
+					.duration_since(UNIX_EPOCH)
+					.expect("Time went backwards")
+					.as_millis();
 
-			let mut dead_tunnels: Vec<String> = Vec::new();
+				let task = app.rt.spawn({
+					let app = app.clone();
+					async move {
+						let mut dead_tunnels: Vec<String> = Vec::new();
 
-			{
-				let port_manager = app_clone.port_manager.clone();
-
-				let tunnels = &port_manager.mutex.lock().tunnels;
-				println!("Currently there are {} tunnels", tunnels.keys().len());
-				for ele in tunnels {
-					let mut t = ele.1.lock();
-					let ref_count = Arc::strong_count(&ele.1);
-					if ref_count <= 3 {
-						if time - t.last_occupied_time > 60000
-							&& time - t.last_issuer_alive_time > 15000
 						{
-							println!("Tunnel {} is dead for 60+ seconds", ele.0);
-							dead_tunnels.push(ele.0.to_owned());
+							let port_manager = app.port_manager.clone();
+
+							let tunnels = &port_manager.mutex.lock().tunnels;
+							println!("Currently there are {} tunnels", tunnels.keys().len());
+							for ele in tunnels {
+								let mut t = ele.1.lock();
+								let ref_count = Arc::strong_count(&ele.1);
+								if ref_count <= 3 {
+									if time - t.last_occupied_time > 60000
+										&& time - t.last_issuer_alive_time > 15000
+									{
+										println!("Tunnel {} is dead for 60+ seconds", ele.0);
+										dead_tunnels.push(ele.0.to_owned());
+									}
+								} else {
+									println!(
+										"Tunnel {} is alive and has {} references",
+										t.id,
+										Arc::strong_count(&ele.1)
+									);
+									t.last_occupied_time = time;
+								}
+
+								// 3 references to the tunnel mutex from different parts of program & two more for each active connection
+								t.online = (ref_count as i32 - 3) / 2;
+
+								let broker_subject =
+									format!("cristalixconnect.main.tunnelalive.{}", t.id);
+								app
+									.broker
+									.publish(
+										broker_subject.as_str(),
+										serde_json::to_string(&t.clone()).unwrap().as_bytes(),
+									)
+									.unwrap();
+								// println!("Tunnel {} has {} references", ele.0, );
+							}
 						}
-					} else {
-						println!(
-							"Tunnel {} is alive and has {} references",
-							t.id,
-							Arc::strong_count(&ele.1)
-						);
-						t.last_occupied_time = time;
+
+						let port_manager = app.port_manager.clone();
+						for ele in dead_tunnels {
+							port_manager.remove_tunnel(&ele).await;
+						}
 					}
-
-					// 3 references to the tunnel mutex from different parts of program & two more for each active connection
-					t.online = (ref_count as i32 - 3) / 2;
-
-					let broker_subject = format!("cristalixconnect.main.tunnelalive.{}", t.id);
-					app_clone
-						.broker
-						.publish(
-							broker_subject.as_str(),
-							serde_json::to_string(&t.clone()).unwrap().as_bytes(),
-						)
-						.unwrap();
-					// println!("Tunnel {} has {} references", ele.0, );
+				});
+				let result = task.await;
+				if result.is_err() {
+					println!("Error while updating tunnels: {}", result.unwrap_err());
 				}
 			}
-
-			let port_manager = app_clone.port_manager.clone();
-			for ele in dead_tunnels {
-				port_manager.remove_tunnel(&ele).await;
-			}
-
 		}
 	});
 
