@@ -42,7 +42,7 @@ async fn handle_stream(
 		destination_host = target_instance.destination_host.clone();
 		destination_port = target_instance.destination_port;
 	}
-	
+
 	// println!("Got a tunnel copy, waiting for the handshake...");
 
 	let mut buf = Vec::new();
@@ -323,7 +323,7 @@ async fn main0() -> std::io::Result<()> {
 
 	let port_manager = Arc::new(create_port_manager(port_range_start, port_range_size));
 
-	let broker = Arc::new(nats::connect("nats-service:4222")?);
+	let broker = Arc::new(nats::connect("127.0.0.1:4222")?);
 
 	let broker_sub = broker.clone();
 
