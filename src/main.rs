@@ -303,7 +303,7 @@ async fn main0() -> std::io::Result<()> {
 	let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
 
 	let port_range_start = 34100;
-	let port_range_size = 100;
+	let port_range_size = 150;
 	let bind_port: i32 = 34064;
 
 	std::env::set_var("RUST_LOG", "info");
