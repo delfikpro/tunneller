@@ -8,6 +8,8 @@ use actix_web::middleware::Logger;
 use actix_web::*;
 use ext::*;
 use std::env;
+use std::fmt::Debug;
+
 extern crate futures;
 extern crate lazy_static;
 
@@ -299,20 +301,25 @@ struct Application {
 	pub broker: Arc<Connection>,
 }
 
+fn get_i32_env(key: &str, default_value: i32) -> i32 {
+	env::var(key)
+		.ok()
+		.map(|str| {
+			str.parse()
+				.expect(format!("unable to parse value {} of env {}", str, key).as_str())
+		})
+		.unwrap_or(default_value)
+}
+
 // thank you, rust error highlighting.
 async fn main0() -> std::io::Result<()> {
 	let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
-	let port_range_start = env::var("TUNNELLER_PORT_RANGE_START")
-		.map(|t| t.parse().unwrap())
-		.unwrap_or(34100);
-	let port_range_size = env::var("TUNNELLER_PORT_RANGE_SIZE")
-		.map(|t| t.parse().unwrap())
-		.unwrap_or(100);
-	let bind_port: i32 = env::var("TUNNELLER_BIND_PORT")
-		.map(|t| t.parse().unwrap())
-		.unwrap_or(34064);
+	let port_range_start = get_i32_env("TUNNELLER_PORT_RANGE_START", 34100);
+	let port_range_size = get_i32_env("TUNNELLER_PORT_RANGE_SIZE", 100);
+	let bind_port: i32 = get_i32_env("TUNNELLER_BIND_PORT", 34064);
 
-	let nats_address: String = env::var("TUNNELLER_NATS_ADDRESS").unwrap_or_else(|_| String::from("127.0.0.1:4222"));
+	let nats_address: String =
+		env::var("TUNNELLER_NATS_ADDRESS").unwrap_or_else(|_| String::from("127.0.0.1:4222"));
 
 	std::env::set_var("RUST_LOG", "info");
 	std::env::set_var("RUST_BACKTRACE", "1");
